@@ -1,0 +1,620 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper   PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="egovframework.com.bidmobile.mobile.service.impl.MobileWebMapper">
+
+	<select id="getLogin"  parameterType="map"  resultType="HashMap">		
+	/* 투찰사 정보 조회 (mobile-Sql-Map.getLogin) */	    
+	  SELECT
+		    *
+		FROM tn_bid_company_info WHERE business_no = #{business_no}
+		and unuse_yn != 'Y'
+		
+    </select>
+    
+	<select id="selectBusinessBidList" parameterType="map" resultType="HashMap">
+		/* 투찰사 입찰공고 리스트 (mobile-Sql-Map.selectBusinessBidList) */	
+		SELECT
+		M.bid_site, 
+		M.bid_risk,
+		M.bid_term,
+		M.bid_cont,
+		M.bid_sp_cont,
+		M.bid_tot_cont,
+		C.chk_dt,
+		C.bid_yn,
+		date_format(C.confirm_dt,'%Y.%m.%d') as confirm_dt,
+		IF(bid_start_dt IS NULL || bid_start_dt = '', NULL, DATE_FORMAT(STR_TO_DATE(bid_start_dt, '%Y%m%d%H%i'),'%Y%m%d%H%i')) AS bid_start_dt,
+		C.confirm_yn,
+		C.choice_price,
+		C.bidding_price, C.bigo as company_bigo, A.*,B.*,
+		(select user_nm from tn_user_info where user_id=A.user_id) as user_nm,
+		case when substr(A.bid_end_dt,1,10)  <![CDATA[<]]> date_format(sysdate(),'%Y%m%d%H') then 'F' else
+			case when substr(A.bid_start_dt,1,10) <![CDATA[<=]]> date_format(sysdate(),'%Y%m%d%H') then 'C' else 'B' end
+		end as finish_status,
+		O.open_rank, O.note
+		FROM (select * from tn_bid_distribution_info where DATE_FORMAT(SUBSTR(bid_end_dt,1,8),'%Y%m%d') >= DATE_FORMAT(ADDDATE(SYSDATE(),-14),'%Y%m%d')) A
+		left outer join
+		tn_bid_notice_file B
+		on A.bid_notice_no = B.bid_notice_no  
+		and A.bid_notice_cha_no = B.bid_notice_cha_no
+		left outer join
+		tn_bid_notice_info_subj M
+		on A.bid_notice_no = M.bid_notice_no  
+		and A.bid_notice_cha_no = M.bid_notice_cha_no
+		left outer join
+		tn_bid_open_result_compt O
+		on O.bid_notice_no = A.bid_notice_no  
+		and O.bid_notice_cha_no = A.bid_notice_cha_no
+		and O.biz_reg_no = (select replace(company_no,'-','') from tn_bid_company_info where business_no=#{business_no})
+		,tn_bid_business_rel C
+		where A.bid_notice_no = C.bid_notice_no 
+		and A.bid_notice_cha_no = C.bid_notice_cha_no
+		and C.send_yn = 'Y'
+		and C.business_no = #{business_no}
+		order by A.bid_end_dt desc
+	</select>
+	
+	<select id="selectBusinessBidCnt" parameterType="map" resultType="int">
+	    /* 이벤트 누적 투찰 개수 (mobile-Sql-Map.selectBusinessBidCnt) */	
+		SELECT COUNT(*)
+		FROM tn_bid_business_rel A, 
+			(
+				SELECT *
+				FROM tn_event_info
+				ORDER BY reg_date DESC
+				LIMIT 1
+			) B
+		WHERE A.bid_yn = 'Y'
+		AND A.business_no = #{user}
+		AND A.bid_dt &gt;= B.start_date
+		AND A.bid_dt &lt;= B.end_date
+	</select>
+	
+	<select id="selectLastEventInfo" parameterType="map" resultType="map">
+	    /* 최근 이벤트 정보 (mobile-Sql-Map.selectLastEventInfo) */	
+		SELECT *
+		FROM tn_event_info
+		ORDER BY reg_date DESC
+		LIMIT 1
+	</select>
+
+	<update id="updateRegId" parameterType="map">
+	    UPDATE tn_bid_company_info
+	    set reg_id = #{regId}
+	    where business_no = #{business_no}
+	</update>
+	
+	<update id="updateChkDt" parameterType="map">
+	    UPDATE tn_bid_business_rel
+	    set chk_dt = case when chk_dt is null then sysdate() else chk_dt end
+	    where business_no = #{business_no}
+	    and bid_notice_no = #{bid_notice_no}
+	    and bid_notice_cha_no = #{bid_notice_cha_no}
+	</update>
+	
+	<update id="updateMsgChkDt" parameterType="map">
+	    UPDATE tn_bid_business_rel
+	    set msg_chk_dt = case when msg_chk_dt is null then sysdate() else msg_chk_dt end
+	    where business_no = #{business_no}
+	</update>
+
+	<select id="selectNotiList" parameterType="map" resultType="HashMap">
+		/* 공지사항 리스트 (mobile-Sql-Map.selectNotiList) */	
+		SELECT notice_id, title, context, open_yn, create_id, notice_type,
+		 (select user_nm from tn_user_info where user_id=A.create_id) as user_nm,
+		 replace(context,'\n','<![CDATA[<br/>]]>') as msg,
+		 date_format(create_dt,'%Y.%m.%d %H:%I:%S') as create_dt ,
+		 fn_file_nm(file_id1) as file_nm1,
+	  	 fn_file_nm(file_id2) as file_nm2,
+	  	 file_id1,
+	  	 file_id2
+		from tn_notice_info A
+		where open_yn='Y'
+		and notice_type =#{notice_type}
+		order by create_dt desc
+<!-- 		Limit #{pageNo}, #{rows} -->
+	</select>
+	
+	<select id="getVersion" parameterType="map" resultType="String">
+		/* 버전정보  (mobile-Sql-Map.getVersion) */	
+		SELECT ver
+		from tn_bid_mobile_info
+		where dtype = #{dtype}
+	</select>
+	
+	<select id="getBidDetailInfo1" parameterType="map" resultType="HashMap">
+		/* 투찰사 입찰공고 리스트 (mobile-Sql-Map.getBidDetailInfo1) */	
+		SELECT C.bidding_price, C.bigo as company_bigo, A.*,B.*, (select user_nm from tn_user_info where user_id=A.user_id) as user_nm
+		from tn_bid_distribution_info A
+		left outer join
+		tn_bid_notice_file B
+		on A.bid_notice_no = B.bid_notice_no  
+		and A.bid_notice_cha_no = B.bid_notice_cha_no
+		,tn_bid_business_rel C
+		where A.bid_notice_no = C.bid_notice_no 
+		and A.bid_notice_cha_no = C.bid_notice_cha_no
+		and A.bid_notice_no = #{bidNoticeNo}
+		and A.bid_notice_cha_no = #{bidNoticeChaNo}
+		and C.business_no = #{business_no}
+	</select>
+	
+	<select id="selectBidDtl" parameterType="map" resultType="HashMap">
+		/* 투찰사 입찰공고 리스트 (mobile-Sql-Map.selectBidDtl) */	
+		SELECT
+		rank.rank,
+		M.bid_site,
+        fn_common_nm('bid_risk_cd',M.bid_risk, null, null) as bid_risk_nm, 
+		M.bid_risk,
+		M.bid_term,
+		M.bid_stock_issue_yn,
+		M.bid_num_of_days,
+		M.bid_cont,
+		M.bid_sp_cont,
+		M.bid_tot_cont,
+		M2.column5,
+		M2.s_range,
+		M2.e_range,
+		(SELECT  round(CAST(replace(B1.base_price,',','') AS signed integer) * (CAST(A1.column5 AS DECIMAL(15,3)) / 100),0)  
+			* (((CAST(M2.s_range AS DECIMAL(15,3)) / 100) +  (CAST(M2.e_range AS DECIMAL(15,3)) / 100)) / 2) 
+			FROM tipspro.tn_bid_notice_info_detail A1, tn_bid_distribution_info B1
+			where A1.bid_notice_no = B1.bid_notice_no
+			and A1.bid_notice_cha_no = B1.bid_notice_cha_no
+			and A.bid_notice_no = A1.bid_notice_no
+			and A.bid_notice_cha_no = A1.bid_notice_cha_no
+			) as bid_money,
+		(SELECT  choice_reason  FROM tipspro.tn_bid_manufacture_rel A1
+			where A.bid_notice_no = A1.bid_notice_no
+			and A.bid_notice_cha_no = A1.bid_notice_cha_no
+			and A1.choice_yn='Y'
+			limit 0,1
+			) as choice_reason ,
+		C.chk_dt,
+		date_format(C.confirm_dt,'%Y.%m.%d') as confirm_dt,
+		C.confirm_yn,
+		C.choice_price,
+		C.bidding_price, C.bigo as company_bigo, A.*,B.*, (select user_nm from tn_user_info where user_id=A.user_id) as user_nm,
+		case when substr(A.bid_end_dt,1,10)  <![CDATA[<]]> date_format(sysdate(),'%Y%m%d%H') then 'F' else
+			case when substr(A.bid_start_dt,1,10) <![CDATA[<=]]> date_format(sysdate(),'%Y%m%d%H') then 'C' else 'B' end
+		end as finish_status
+		from tn_bid_distribution_info A
+		left outer join
+		tn_bid_notice_file B
+		on A.bid_notice_no = B.bid_notice_no  
+		and A.bid_notice_cha_no = B.bid_notice_cha_no
+		left outer join
+		tn_bid_notice_info_subj M
+		on A.bid_notice_no = M.bid_notice_no  
+		and A.bid_notice_cha_no = M.bid_notice_cha_no
+		left outer join
+		tn_bid_notice_info_detail M2
+		on A.bid_notice_no = M2.bid_notice_no  
+		and A.bid_notice_cha_no = M2.bid_notice_cha_no
+		,tn_bid_business_rel C
+		,(
+		select @rank:=@rank+1 as rank, bid_notice_no, bid_notice_cha_no, apply_dt3 from tn_bid_apply_info, (select @rank:=0) R
+		where apply_dt3 is not null
+		order by apply_dt3 asc 
+		) rank
+		where A.bid_notice_no = C.bid_notice_no 
+		and A.bid_notice_cha_no = C.bid_notice_cha_no
+		and A.bid_notice_no = rank.bid_notice_no and A.bid_notice_cha_no = rank.bid_notice_cha_no
+		and C.business_no = #{business_no}
+		and A.bid_notice_no = #{bid_notice_no}
+		and A.bid_notice_cha_no = #{bid_notice_cha_no}
+<!-- 		and date_format(substr(bid_end_dt,1,8),'%Y%m%d') >= date_format(adddate(sysdate(),-3),'%Y%m%d')  -->
+		order by A.bid_end_dt desc
+	</select>
+	
+	<select id="selectBidRiskDtl" parameterType="map" resultType="HashMap">
+	    /* 투찰공고 리스크 정보 (mobile-Sql-Map.selectBidRiskDtl) */
+	    select * from tn_bid_notice_info_risk
+	    where bid_notice_no = #{bid_notice_no}
+		and bid_notice_cha_no = #{bid_notice_cha_no}
+	</select>
+	
+	<select id="selectMsgList" parameterType="map" resultType="HashMap">
+	    select A.*, B.*, replace(A.message,'\n','<![CDATA[<br/>]]>') as msg 
+	    from tn_bid_message_his A
+	    left join tn_bid_distribution_info B on A.bid_notice_no = B.bid_notice_no and A.bid_notice_cha_no = B.bid_notice_cha_no
+		where A.business_no= #{business_no}
+		and A.message_type='msg'
+		and A.message not like (concat('%','상품확인요청','%'))
+		<!-- and sms_key is not null -->
+		and A.message != ''
+		and A.message is not null
+		and date_format(A.send_dt,'%Y%m%d') >= date_format(adddate(sysdate(),-14),'%Y%m%d') 
+		order by A.send_dt desc
+	</select>
+	
+	<select id="selectMsgView" parameterType="map" resultType="HashMap">
+	    select *, replace(message,'\n','<![CDATA[<br/>]]>') as msg 
+	    from 
+		tn_bid_message_his
+		where message_id=#{message_id}
+	    
+	</select>
+	
+	<update id="updateConfirmMsg" parameterType="map">
+	    UPDATE tn_bid_message_his
+	    set 
+	    	<if test="confirm_yn!=null and !confirm_yn.equals('')"> 
+		    	confirm_yn = #{confirm_yn},
+		    	confirm_dt = sysdate()
+	    	</if>
+	    where business_no = #{business_no}
+	    and message_id = #{message_id} 
+	    and bid_notice_no = #{bid_notice_no}
+	    and bid_notice_cha_no = #{bid_notice_cha_no}
+	</update>
+
+	<select id="selectBidRangeList" parameterType="map" resultType="HashMap">
+	   /* 추천구간 리스트 (mobile-Sql-Map.selectBidRangeList) */
+    	select *
+		from tn_bid_notice_range
+		where bid_notice_no = #{bid_notice_no}
+		and bid_notice_cha_no = #{bid_notice_cha_no} 
+	</select>
+	
+	
+	<update id="updateConfirmInfo" parameterType="map">
+	    UPDATE tn_bid_business_rel
+	    set 
+	    	<if test="confirm_yn!=null and !confirm_yn.equals('')"> 
+		    	confirm_yn = #{confirm_yn},
+		     	confirm_dt = sysdate(),
+	    	</if>
+	    	<if test="bid_yn!=null and !bid_yn.equals('')"> 
+		    	bid_yn = #{bid_yn},
+		    	bid_dt = sysdate(),
+	    	</if>
+	    	<if test="choice_price!=null and !choice_price.equals('')"> 
+		     	choice_price = replace(#{choice_price},'NaN',''),
+		     	confirm_dt = sysdate(),
+	    	</if>
+	     	create_id = create_id
+	    where business_no = #{business_no}
+	    and bid_notice_no = #{bid_notice_no}
+	    and bid_notice_cha_no = #{bid_notice_cha_no}
+	</update>
+
+	<update id="insertBusiness" parameterType="map" useGeneratedKeys="true" keyProperty="business_no">
+	    /* 투찰사 저장 (Business.insertBusiness) */	    
+	  	INSERT INTO tn_bid_company_info
+			(
+				business_no,
+				company_no,
+				company_nm,
+				delegate,
+				delegate_explain,
+				company_type,
+				address,
+				address_detail,
+				phone_no,
+				mobile_no,
+				fax_no,
+				department,
+				position,
+				bidmanager,
+				email,
+				business_condition,
+				business_condition_detail,
+				zip_no,
+				gubun,
+				unuse_yn,
+				pwd,
+				msg_info1,
+				msg_info2,
+				msg_info3,
+				join_route,
+				join_approve_yn
+			)
+		VALUES
+			(			
+			   #{business_no},
+			   #{company_no},
+			   #{company_nm},
+			   #{delegate},
+			   #{delegate_explain},
+			   #{company_type},
+			   #{address},
+			   #{address_detail},
+			   #{phone_no},
+			   #{mobile_no},
+			   #{fax_no},
+			   #{department},
+			   #{position},
+			   #{bidmanager},
+			   #{email},
+			   #{business_condition},
+			   #{business_condition_detail},
+			   #{zip_no},
+			   #{gubun},
+			   #{unuse_yn},
+			   <if test="pwd!=null and !pwd.equals('')">  
+				   #{pwd},     				
+			   </if>
+			   <if test="pwd==null">  
+				   replace(#{mobile_no},'-',''),     				
+			   </if>
+			   #{msg_info1},
+			   #{msg_info2},
+			   #{msg_info3},
+			   #{join_route},
+			   'N'
+			)
+			on duplicate key
+			update
+			company_no 				= #{company_no},
+			company_nm 				= #{company_nm},
+			delegate 				= #{delegate},
+			delegate_explain 		= #{delegate_explain},
+			company_type 			= #{company_type},
+			address 				= #{address},
+			address_detail 			= #{address_detail},
+			phone_no 				= #{phone_no},
+			mobile_no 				= #{mobile_no},
+			fax_no 					= #{fax_no},
+			department				= #{department},
+			position 				= #{position},
+			bidmanager				= #{bidmanager},
+			email 					= #{email},
+			business_condition 		= #{business_condition},
+			business_condition_detail = #{business_condition_detail},
+			zip_no 					= #{zip_no},
+			bigo 					= #{bigo},
+			unuse_yn 					= #{unuse_yn},
+			pwd						= #{pwd}, 
+			msg_info1 					= #{msg_info1},
+			msg_info2 					= #{msg_info2},
+			msg_info3 					= #{msg_info3},
+			join_route 					= #{join_route},
+			join_approve_yn				= 'N'
+    </update>
+    
+	<update id="insertBusinessDetail" parameterType="map">
+	    /* 투찰사 상세정보  저장 (insertBusinessDetail) */	    
+	  	INSERT INTO tn_bid_company_detail
+			(
+				business_no
+				,start_dt
+				,credit_cd
+				,credit_dt
+				,female_yn
+				,female_dt
+				,scale_cd
+				,scale_dt
+				,create_id
+				,create_dt
+				,modify_id
+				,modify_dt
+			)
+		VALUES
+			(			
+			   	#{business_no},
+ 				#{start_dt},
+ 				#{credit_cd},
+ 				#{credit_dt},
+ 				#{female_yn},
+ 				#{female_dt},
+ 				#{scale_cd},
+ 				#{scale_dt},
+ 				#{user},
+ 				sysdate(),
+ 				#{user},
+ 				sysdate()
+			) 
+	</update>
+	
+	<select id="selectAddressList"  parameterType="map"  resultType="HashMap">		
+		/* 기본주소 조회 (mobile-Sql-Map.selectAddressList) */	    
+	  	SELECT *
+		FROM tn_common_cd 
+		WHERE cd_group_id = '10'
+    </select>
+	
+	<select id="selectGoodsInfo"  parameterType="map"  resultType="HashMap">		
+		/* 제조물품 목록  조회 (mobile-Sql-Map.selectGoodsInfo) */	    
+	  	SELECT * 
+	  	FROM tn_bid_goods_info
+	  	WHERE 1=1
+	  	<if test="goodsNo != null and !''.equals(goodsNo)">
+	  		AND goods_no LIKE CONCAT('%',#{goodsNo},'%')    
+	  	</if>
+	  	<if test="goodsNm != null and !''.equals(goodsNm)">
+	  		AND goods_nm LIKE CONCAT('%',#{goodsNm},'%')    
+	  	</if>
+	  	LIMIT #{start}, #{listCnt}
+    </select>
+    
+    <select id="checkCompanyNo"  parameterType="map"  resultType="int">		
+		/* 사업자 번호 중복 확인 (mobile-Sql-Map.checkCompanyNo) */
+		SELECT COUNT(company_no) 
+		FROM tn_bid_company_info A
+	  	WHERE company_no = #{company_no}
+    </select>
+     
+	<update id="updateBizGoodsInfo" parameterType="map">
+        /* 제조 물품 등록 (updateBizGoodsTypeList) */
+	    INSERT INTO tn_bid_business_goods
+	    (
+	    business_no,
+	    goods_no,
+	    create_dt,
+	    modify_dt
+	    )
+	    VALUE(
+	    #{business_no},
+	    #{goods_no},
+	    SYSDATE(),
+	    SYSDATE()
+	    )
+	    ON DUPLICATE KEY
+		UPDATE
+		modify_dt=SYSDATE()
+	</update>
+	
+	<select id="selectGubunInfo"  parameterType="map"  resultType="HashMap">		
+		/* 업종 목록  조회 (mobile-Sql-Map.selectGubunInfo) */
+		SELECT A.*, B.cd_nm AS parent_nm
+		FROM tn_biz_gubun_info A
+		LEFT JOIN tn_biz_gubun_info B ON B.cd = A.parent_cd
+	  	WHERE 1=1
+	  	AND A.del_yn = 'N' 
+	  	AND A.depth = 2
+	  	<if test="cd != null and !''.equals(cd)">
+	  		AND A.cd LIKE CONCAT('%',#{cd},'%')    
+	  	</if>
+	  	<if test="cdNm != null and !''.equals(cdNm)">
+	  		AND A.cd_nm LIKE CONCAT('%',#{cdNm},'%')    
+	  	</if>
+	  	order by A.parent_cd asc, A.cd asc
+	  	LIMIT #{start}, #{listCnt}
+    </select>
+
+	<select id="selectBizTypeList"  parameterType="map"  resultType="HashMap">		
+		/* 기업구분 (mobile-Sql-Map.selectBizTypeList) */	    
+	  	SELECT DISTINCT(eval_cd) as cd, eval_nm as cd_nm 
+		FROM tn_eval_info 
+		WHERE eval_type= #{evalType}
+		AND eval_group = #{evalGroup}
+    </select>
+    
+	<update id="insertCompanyType" parameterType="map">
+        /* 업종 등록 (insertCompanyType) */
+	    insert into tn_bid_business_type
+	    (
+	    business_no,
+	    company_type_cd,
+	    create_dt,
+	    modify_dt
+	    )
+	    value(
+	    #{business_no},
+	    #{company_type_cd},
+	    sysdate(),
+	    sysdate()
+	    )
+	</update>
+	
+	<update id="insertGoodsType" parameterType="map">
+        /* 제조물품 등록 (insertGoodsType) */
+	    insert into tn_bid_business_goods
+	    (
+	    business_no,
+	    goods_no,
+	    create_dt,
+	    modify_dt
+	    )
+	    value(
+	    #{business_no},
+	    #{goods_no},
+	    sysdate(),
+	    sysdate()
+	    )
+	</update>
+	
+	<update id="insertGoodsDirectType" parameterType="map">
+        /* 직생물품 등록 (insertGoodsDirectType) */
+	    insert into tn_bid_business_goods_direct
+	    (
+	    business_no,
+	    goods_no,
+	    limit_dt,
+	    create_dt,
+	    modify_dt
+	    )
+	    value(
+	    #{business_no},
+	    #{goods_no},
+	    #{limit_dt},
+	    sysdate(),
+	    sysdate()
+	    )
+	</update>
+	
+	<update id="insertCompanylicense" parameterType="map">
+	    /* 적격정보 저장 (insertCompanylicense) */	    
+  		insert into tn_bid_business_license
+	    (
+	    business_no,
+	    license_cd,
+	    create_dt,
+	    modify_dt
+	    )
+	    value(
+	    #{business_no},
+	    #{license_cd},
+	    sysdate(),
+	    sysdate()
+	    )
+	</update>
+	
+	<select id="selectEvalInfo"  parameterType="map"  resultType="HashMap">		
+		/* 평가점수 (mobile-Sql-Map.selectEvalInfo) */	    
+	  	SELECT *
+		FROM tn_eval_info
+		WHERE 1=1
+		<if test="eval_gubun != null and !''.equals(eval_gubun)">
+			AND eval_gubun = #{eval_gubun}
+		</if>
+		<if test="amount != null and !''.equals(amount)">
+			AND amount = #{amount}
+		</if>
+		<if test="eval_group != null and !''.equals(eval_group)">
+			AND eval_group = #{eval_group}
+		</if>
+		<if test="eval_type != null and !''.equals(eval_type)">
+			AND eval_type = #{eval_type}
+		</if>
+		<choose>
+		    <when test="type != null and 'fromStartDt'.equals(type)">
+				AND SUBSTRING(eval_nm,5,1) > #{pastYear} ORDER BY eval_nm LIMIT 1
+			</when>
+			<when test="type != null and 'fromFemaleDt'.equals(type)">
+				AND IF(10 &lt;= #{pastYear}, 
+					eval_nm LIKE CONCAT('%','이상','%'),
+					IF( 3 > #{pastYear},
+						eval_nm like CONCAT('%','미만','%'), 
+						SUBSTRING_INDEX(@YEAR:=REPLACE(REPLACE(eval_nm,'여성기업',''), '년',''),'~',-1) > #{pastYear} AND substring_index(@YEAR,'~',1) &lt;= #{pastYear}
+					)
+				)    
+			</when>
+			<otherwise>
+				AND eval_nm = #{eval_nm}    
+			</otherwise>
+		</choose>
+    </select>
+	
+	<update id="updateCompanyFileList" parameterType="map">
+	    /* 프로젝트 파일  (updateCompanyFileList) */	
+	    UPDATE tn_bid_company_info
+		set
+			file_id1 =	#{file_id1},
+			file_id2 =	#{file_id2},
+			file_id3 =	#{file_id3},
+			file_id4 =	#{file_id4}
+		where business_no = #{business_no}
+   	</update>
+   	
+	<select id="insertCreditDgreeInfo" parameterType="map" resultType="HashMap">		
+		/* 신인도 정보 (mobile-Sql-Map.checkCompanyNo) */
+		INSERT INTO tn_bid_business_credit_degree (business_no, common_cd)
+		VALUE ( #{business_no},  
+			(
+				SELECT cd
+				FROM tn_common_cd
+				WHERE cd_group_id = (SELECT cd_group_id FROM tn_common_cd_group WHERE cd_group_nm = '신인도')
+				AND cd_nm = #{cd_nm}
+			)
+		)
+    </select>
+    
+	<update id="insertLog" parameterType="map">		
+		/* 로그 기록 (mobile-Sql-Map.insertLog) */
+		INSERT INTO tn_bid_log 
+		(business_no, type)
+		VALUE ( #{business_no}, #{type} )  
+    </update>
+
+</mapper>
